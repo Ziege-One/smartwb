@@ -1,46 +1,73 @@
+import logging
+from typing import Any, Dict
+
 import voluptuous as vol
+
 from homeassistant import config_entries
-from homeassistant.core import callback
-import homeassistant.helpers.config_validation as cv
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResult
 
-from .const import DOMAIN
+from .const import DOMAIN, AVAILABLE_ENTITIES
 
-class SmartWBFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
+_LOGGER = logging.getLogger(__name__)
+
+
+class SmartWBConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
+    """Handle a config flow for SmartWB."""
+
     VERSION = 1
 
-    async def async_step_user(self, user_input=None):
-        errors = {}
+    async def async_step_user(self, user_input: Dict[str, Any] | None = None) -> FlowResult:
         if user_input is not None:
-            # Create a unique_id based on the IP and port
-            unique_id = f"{user_input['ip_address']}:{user_input['port']}"
-            await self.async_set_unique_id(unique_id)
-            self._abort_if_unique_id_configured()
-            
-            return self.async_create_entry(title=user_input['name'], data=user_input)
-        
-        data_schema = vol.Schema({
-            vol.Required('ip_address'): str,
-            vol.Required('port', default=80): int,
-            vol.Required('name'): str
-        })
-        return self.async_show_form(step_id="user", data_schema=data_schema, errors=errors)
+            ip = user_input["ip_address"]
+            port = user_input["port"]
+            name = user_input["name"]
 
-    @staticmethod
-    @callback
-    def async_get_options_flow(config_entry):
-        return SmartWBOptionsFlowHandler(config_entry)
+            await self.async_set_unique_id(f"{ip}:{port}")
+            self._abort_if_unique_id_configured()
+
+            return self.async_create_entry(
+                title=name,
+                data={
+                    "ip_address": ip,
+                    "port": port,
+                    "name": name,
+                },
+            )
+
+        schema = vol.Schema(
+            {
+                vol.Required("ip_address"): str,
+                vol.Required("port", default=80): int,
+                vol.Required("name", default="SmartWB"): str,
+            }
+        )
+
+        return self.async_show_form(step_id="user", data_schema=schema)
+
+    async def async_step_import(self, user_input: Dict[str, Any]) -> FlowResult:
+        return await self.async_step_user(user_input)
+
 
 class SmartWBOptionsFlowHandler(config_entries.OptionsFlow):
-    def __init__(self, config_entry):
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         self.config_entry = config_entry
 
-    async def async_step_init(self, user_input=None):
+    async def async_step_init(self, user_input: Dict[str, Any] | None = None) -> FlowResult:
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
-        
-        data_schema = vol.Schema({
-            vol.Optional('ip_address', default=self.config_entry.data.get('ip_address')): str,
-            vol.Optional('port', default=self.config_entry.data.get('port')): int,
-            vol.Optional('name', default=self.config_entry.data.get('name')): str
-        })
-        return self.async_show_form(step_id="init", data_schema=data_schema)
+
+        options = self.config_entry.options
+
+        schema = {
+            vol.Optional(
+                key,
+                default=options.get(key, True),
+            ): bool
+            for key in AVAILABLE_ENTITIES
+        }
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(schema),
+        )
